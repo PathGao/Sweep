@@ -1,0 +1,114 @@
+[
+ {
+  "id": "logic",
+  "kind": "fn",
+  "applies": "always",
+  "title": "Does it do what its name, callers and docs promise",
+  "ask": "Read the function and every caller listed. For each caller, does the function return/side-effect what that caller assumes (shape, null, empty, units, order)? Check edge inputs: empty, missing, zero, duplicate, very large. Compare against what the project docs (DESIGN.md, comments) say this behaviour should be. A finding needs a concrete input and the wrong output."
+ },
+ {
+  "id": "guard",
+  "kind": "fn",
+  "applies": "\\bif\\b|\\?|&&|\\|\\||return",
+  "title": "Every condition, read both ways",
+  "ask": "For each condition (if, early return, ternary, filter, disabled/hidden toggle): (1) Missing member - list the sibling cases that should also be stopped and are not (e.g. it checks loading but not error; minimized but not off-screen). (2) Over-reach - read the condition backwards: list every state that satisfies it besides the one it was written for, and say whether each is meant to. Write the lists in evidence, not just the verdict. (3) Unreachable branch - is any branch here impossible because callers or the UI already prevent that state (button disabled, caller checks first)? Such a branch is dead code and often carries text that disagrees with the real path."
+ },
+ {
+  "id": "async",
+  "kind": "fn",
+  "applies": "await|\\.then\\(|setTimeout|setInterval|addEventListener|onMessage|requestAnimationFrame|Promise",
+  "title": "Time: stale results, overlap, cancel",
+  "ask": "For each await / callback / timer: what else can change while it is pending (user switches item, closes panel, another request starts, settings change)? After it resumes, does the code check that the thing it started for is still current before writing state or UI? Can two runs overlap and interleave writes to the same storage key or element? Is in-flight shown as a state (button disabled, spinner) and cleared on every exit path including errors and cancel?"
+ },
+ {
+  "id": "errors",
+  "kind": "fn",
+  "applies": "await|fetch|chrome\\.|browser\\.|catch|throw|try|JSON\\.parse|\\.then\\(",
+  "title": "Failure paths",
+  "ask": "List every call that can fail (network, storage, permission, parse, missing element). For each: is the failure caught, is the user told in the project's standard way (shared error helper/table, not ad-hoc text), is partial work rolled back or left consistent, is the error swallowed silently? Compare with how sibling entry points handle the same failure: if they differ, that is a finding (shape 3)."
+ },
+ {
+  "id": "state",
+  "kind": "fn",
+  "applies": "\\.(disabled|hidden|textContent|innerHTML|className|checked|value)\\s*=|classList|\\bstate\\b|\\bset[A-Z]\\w*\\(|storage\\.(local|sync|session)\\.set",
+  "title": "State lives in one place, every state is drawn",
+  "ask": "Does this function keep or write a fact that is also kept elsewhere (a second flag, a cached copy, a DOM attribute used as truth)? Do several booleans encode one phase so illegal combinations are possible? For UI writes: which states can this element be in (empty, loading, error, stale, busy, disabled-with-reason) and does this code cover each, or leave the previous state's text/flags behind?"
+ },
+ {
+  "id": "dup",
+  "kind": "fn",
+  "applies": "always",
+  "title": "Is this logic written somewhere else too",
+  "ask": "Search the repo (grep the key calls, constants, message names and strings this function uses) for other functions that answer the same question or build the same thing. If you find one: do the two agree in every branch? If they differ, which is right? Name both locations. Also: does a shared helper already exist that this should call instead of re-implementing? Put the grep commands you ran in evidence."
+ },
+ {
+  "id": "dead",
+  "kind": "fn",
+  "applies": "no_callers",
+  "title": "No caller found by the graph - is it reachable",
+  "ask": "The call graph found no production caller. Check: event listeners, exports used by other files or HTML, message handlers, dynamic property access, string references, manifest/HTML entry. Grep the name across the whole repo including .html and .json. If truly unreachable, it is a finding (pattern dead-code); also check whether a live copy of it exists elsewhere that has since diverged (stale copy)."
+ },
+ {
+  "id": "security",
+  "kind": "fn",
+  "applies": "innerHTML|outerHTML|insertAdjacentHTML|eval\\(|new Function|fetch\\(|postMessage|onMessage|executeScript|apiKey|token|secret|password",
+  "title": "Trust boundaries",
+  "ask": "Where does each input come from (page DOM, network, other extension context, user)? Is untrusted text inserted as HTML? Are messages from other contexts validated (sender, shape)? Are secrets kept out of synced storage, logs, URLs and error text?"
+ },
+ {
+  "id": "wording",
+  "kind": "fn",
+  "applies": "[\\u4e00-\\u9fff]|textContent|title\\s*=|alert\\(|confirm\\(|placeholder",
+  "title": "User-visible text",
+  "ask": "Read the project's wording rules (AGENTS.md section on user-visible copy, DESIGN.md, any central strings table). Is every user-visible string in this function taken from the central table if the project has one? Does it follow the terminology list? Is the same situation described with the same words as in other entry points? Does the text say what actually happened (no 'success' on partial failure, no count that can be wrong)?"
+ },
+ {
+  "id": "lit-one",
+  "kind": "lit",
+  "applies": "always",
+  "title": "One fact, many copies",
+  "ask": "This literal appears in several files (listed with context). Decide what it is: storage key, message name, setting key, error code, CSS id, user-visible sentence, or coincidence. If it names the same fact in each place: should it come from one source (constant / table / shared module)? Are all occurrences really the same fact, or is one of them a different meaning that happens to share text? Check near-variants too (grep a distinctive part of it): a copy that drifted to slightly different text is the most valuable finding here. Coincidence (unrelated meanings) is clean with the reason. If it is a message or request name: put the sender(s) and the handler side by side. Every field the sender sets must be read by the handler under the same name, every field the handler reads must be sent, and the sender must use the response (ok/error/text) the handler returns."
+ },
+ {
+  "id": "clone-one",
+  "kind": "clone",
+  "applies": "always",
+  "title": "Same code in several functions",
+  "ask": "These functions share a block of code. Do they change for the same reason (same rule, same protocol, same UI behaviour)? If yes: have the copies already diverged in any branch, and which version is right? Finding if they diverge or if one rule is maintained in several places. If they only look alike but encode different rules, clean with the reason."
+ },
+ {
+  "id": "same-one",
+  "kind": "same",
+  "applies": "always",
+  "title": "Same function name in several files",
+  "ask": "Functions with this name are defined in several files (all shown). Decide per pair: same job, or a generic name for unrelated jobs (then clean with the reason). Same job: is there a shared module that already exports it (grep the shared files for the name and close variants)? Do the copies differ in any branch, default or text, and which is right? Finding if a helper is re-implemented locally or if copies diverged."
+ },
+ {
+  "id": "sib-alike",
+  "kind": "sib",
+  "applies": "always",
+  "title": "Two entry points answering the same question",
+  "ask": "These two functions in different files use the same callees/literals, so they likely serve the same user action or the same protocol from two entry points (two UI surfaces, or sender vs receiver). First say whether they really do the same job. If yes, compare them branch by branch: options and field names sent, how failures are classified and which text is shown, disabled/empty states and their reasons, what happens to existing tabs/windows, what is done with the response. Each difference that a user or the other side would notice is a finding unless a doc or comment says it is intended. Name both locations."
+ },
+ {
+  "id": "text-same",
+  "kind": "text",
+  "applies": "always",
+  "title": "Same situation, same words",
+  "ask": "For each string in this chunk: (1) find every string in the full catalog that describes the same situation (same error, same empty state, same disabled reason, same action name). If the wording differs between entry points, that is a finding naming all variants. (2) If the project has a central text table or error helper, a sentence that restates a table entry instead of using it is a finding. (3) Check the project's vocabulary rules (DESIGN.md / AGENTS.md). (4) Does the sentence say what actually happens (a reason that can be wrong, a count that can be wrong, advice that does not help)? Group your findings: one finding per situation, listing every location."
+ },
+ {
+  "id": "hard-one",
+  "kind": "hard",
+  "applies": "always",
+  "title": "Hardcoded value: one fact, one source",
+  "ask": "This value (a number is shown as #N) is written inline at the sites listed, and may also be defined as a named constant or table entry (listed under Defined as). For each site decide what fact it encodes: a limit, a timeout, a storage key or prefix, a message/setting name, a user-visible sentence or button name, or a coincidence (an unrelated meaning that happens to share the value, e.g. 12 as a font size vs 12 as a tag limit). Finding (pattern hardcoded-value) when the site encodes the same fact as the constant and does not use it, or when the same fact is written inline at 2+ sites with no single source. Name the constant or table it should come from, or say none exists yet and which module owns the fact (follow the project's own rule for central tables in ARCHITECTURE/DESIGN/AGENTS). Group sites of the same fact into one finding listing every location. If the project already has a lint/selftest that enforces this class, say whether it catches these sites. Coincidences are clean with the reason."
+ },
+ {
+  "id": "mech-members",
+  "kind": "mech",
+  "applies": "always",
+  "title": "Mechanism: did every member join",
+  "ask": "A mechanism was registered with a rule every member must follow. Enumerate ALL candidate members by searching the repo (put the exact grep commands in evidence), not just the ones you remember. For each candidate, does it join the mechanism and obey the rule? A member that does its own thing instead is a finding (pattern missing-member)."
+ }
+]
