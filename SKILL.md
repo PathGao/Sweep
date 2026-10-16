@@ -18,9 +18,12 @@ rows    = units:  fn     every function (graphify + tree-sitter)
                          .sweep/text-catalog.md (all of them)              (same situation, same words)
                   hard   every number, key, prefix or sentence that equals a named constant
                          or table entry elsewhere, or is written inline 2+ times     (one fact, one source)
+                  flow   a function taking untrusted input (message, network, page text, URL, argv) linked by the
+                         call graph, one direction, to one doing harm with data (HTML, code, navigation,
+                         request, permission, storage/file write, exec)          (unchecked input)
                   mech   every mechanism an agent registers                (a member that did not join)
 columns = lenses: logic, guard, async, errors, state, dup, dead, security, wording,
-                  lit-one, clone-one, same-one, sib-alike, text-same, hard-one, mech-members  (lenses.json)
+                  lit-one, clone-one, same-one, sib-alike, text-same, hard-one, flow-trace, mech-members  (lenses.json)
 cell    = (unit, lens), only where the lens applies (regex on the unit's source)
 ```
 
@@ -28,7 +31,7 @@ The cross-file kinds exist because per-function review cannot see the other copy
 
 Agents fill cells. A cell is `clean` only with evidence naming the lines read; `record` rejects the whole packet otherwise, and rejects a packet with any cell missing. Coverage is `filled / applicable cells` and is printed, not claimed.
 
-Each cell stores the unit's hash. `scan` after a code change reopens exactly the cells whose unit changed. Rescans cost what changed, not the whole repo.
+Each cell stores the unit's hash. `scan` after a code change reopens the cells whose unit changed, plus the filled cells of every function that calls a changed function (one level up: a callee's new return shape or error breaks its callers). Rescans cost what changed and what it touches, not the whole repo.
 
 ## Commands
 
@@ -51,7 +54,7 @@ Each cell stores the unit's hash. `scan` after a code change reopens exactly the
 
 1. Read the project's rules (README, CONTRIBUTING, `AGENTS.md` / `CLAUDE.md`, design docs). Choose include/exclude: production code only; tests, mocks and generated files out. `init`. Show the user the `status` table and the cell count before spending agents. A full sweep is roughly one worker per 5 packets; scope with `--path` when the user wants a pilot or one area.
 2. Launch workers in parallel (Agent tool, one message, `run_in_background: true`), each with the worker prompt below and the same `--path` filter. Workers lease packets themselves, so they never overlap. Relaunch until `next` prints `NONE` and `status` shows no open or leased cells. Workers may register mechanisms; that adds cells, so check `status` again after they finish.
-3. `dedupe`, then one verifier per ~15 findings: re-read the code, argue for and against, `judge`. Do not show the user unverified findings as confirmed.
+3. `dedupe`, then one verifier per ~15 findings: re-read the code, argue for and against, `judge`. When the project has a runnable test harness, the verifier also writes the smallest reproduction that runs production code (file under `.sweep/verify/`, named after its batch) and the `judge` note says whether it reproduced; a verdict reached by reading only says so. Do not show the user unverified findings as confirmed.
 4. `report`. For more than ~10 findings, write it as a review file the user can annotate: numbered items, location, symptom, suggestion, a decision column. Patterns seen in 2+ units go to the user as lint candidates: a class found twice is cheaper as a check that runs on every change than as another scan.
 5. When the user wants a completeness number: `sample --pct 10`, run workers with `--pass 2` (fresh agents, they must not see pass-1 results), `estimate`. If a known-defect list exists (fixes merged later, an earlier audit), also report how many of those pass 1 found.
 
