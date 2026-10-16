@@ -25,7 +25,7 @@
   "kind": "fn",
   "applies": "await|fetch|chrome\\.|browser\\.|catch|throw|try|JSON\\.parse|\\.then\\(",
   "title": "Failure paths",
-  "ask": "List every call that can fail (network, storage, permission, parse, missing element). For each: is the failure caught, is the user told in the project's standard way (shared error helper/table, not ad-hoc text), is partial work rolled back or left consistent, is the error swallowed silently? Compare with how sibling entry points handle the same failure: if they differ, that is a finding (shape 3)."
+  "ask": "List every call that can fail (network, storage, permission, parse, missing element). For each: is the failure caught, is the user told in the project's standard way (shared error helper/table, not ad-hoc text), is partial work rolled back or left consistent, is the error swallowed silently? Compare with how sibling entry points handle the same failure: if they differ, that is a finding (two places answering one question differently)."
  },
  {
   "id": "state",
@@ -60,7 +60,7 @@
   "kind": "fn",
   "applies": "[\\u4e00-\\u9fff]|textContent|title\\s*=|alert\\(|confirm\\(|placeholder",
   "title": "User-visible text",
-  "ask": "Read the project's wording rules (AGENTS.md section on user-visible copy, DESIGN.md, any central strings table). Is every user-visible string in this function taken from the central table if the project has one? Does it follow the terminology list? Is the same situation described with the same words as in other entry points? Does the text say what actually happened (no 'success' on partial failure, no count that can be wrong)?"
+  "ask": "Read the project's wording rules (style guide, design docs, agent instructions, any central strings table). Is every user-visible string in this function taken from the central table if the project has one? Does it follow the terminology list? Is the same situation described with the same words as in other entry points? Does the text say what actually happened (no 'success' on partial failure, no count that can be wrong)?"
  },
  {
   "id": "lit-one",
@@ -95,14 +95,14 @@
   "kind": "text",
   "applies": "always",
   "title": "Same situation, same words",
-  "ask": "For each string in this chunk: (1) find every string in the full catalog that describes the same situation (same error, same empty state, same disabled reason, same action name). If the wording differs between entry points, that is a finding naming all variants. (2) If the project has a central text table or error helper, a sentence that restates a table entry instead of using it is a finding. (3) Check the project's vocabulary rules (DESIGN.md / AGENTS.md). (4) Does the sentence say what actually happens (a reason that can be wrong, a count that can be wrong, advice that does not help)? Group your findings: one finding per situation, listing every location."
+  "ask": "For each string in this chunk: (1) find every string in the full catalog that describes the same situation (same error, same empty state, same disabled reason, same action name). If the wording differs between entry points, that is a finding naming all variants. (2) If the project has a central text table or error helper, a sentence that restates a table entry instead of using it is a finding. (3) Check the project's vocabulary rules (style guide or design docs). (4) Does the sentence say what actually happens (a reason that can be wrong, a count that can be wrong, advice that does not help)? Group your findings: one finding per situation, listing every location."
  },
  {
   "id": "hard-one",
   "kind": "hard",
   "applies": "always",
   "title": "Hardcoded value: one fact, one source",
-  "ask": "This value (a number is shown as #N) is written inline at the sites listed, and may also be defined as a named constant or table entry (listed under Defined as). For each site decide what fact it encodes: a limit, a timeout, a storage key or prefix, a message/setting name, a user-visible sentence or button name, or a coincidence (an unrelated meaning that happens to share the value, e.g. 12 as a font size vs 12 as a tag limit). Finding (pattern hardcoded-value) when the site encodes the same fact as the constant and does not use it, or when the same fact is written inline at 2+ sites with no single source. Name the constant or table it should come from, or say none exists yet and which module owns the fact (follow the project's own rule for central tables in ARCHITECTURE/DESIGN/AGENTS). Group sites of the same fact into one finding listing every location. If the project already has a lint/selftest that enforces this class, say whether it catches these sites. Coincidences are clean with the reason."
+  "ask": "This value (a number is shown as #N) is written inline at the sites listed, and may also be defined as a named constant or table entry (listed under Defined as). For each site decide what fact it encodes: a limit, a timeout, a storage key or prefix, a message/setting name, a user-visible sentence or button name, or a coincidence (an unrelated meaning that happens to share the value, e.g. 12 as a font size vs 12 as a tag limit). Finding (pattern hardcoded-value) when the site encodes the same fact as the constant and does not use it, or when the same fact is written inline at 2+ sites with no single source. Name the constant or table it should come from, or say none exists yet and which module owns the fact (follow the project's own rule for central tables, if its docs have one). Group sites of the same fact into one finding listing every location. If the project already has a lint/selftest that enforces this class, say whether it catches these sites. Coincidences are clean with the reason."
  },
  {
   "id": "mech-members",

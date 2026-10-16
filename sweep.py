@@ -226,7 +226,7 @@ def scan(root, c):
                 best = u
         return best
 
-    # shared literals (shape 1/3: the same key or sentence written in several files)
+    # shared literals (the same key or sentence written in several files)
     for f in {n.get("source_file") for n in g["nodes"]}:
         if in_corpus(f):
             load(f)
@@ -260,7 +260,7 @@ def scan(root, c):
                           meta={"where": sorted((u["file"], u["line_start"], u["line_end"]) for u in us)})
 
     # siblings: functions in different files that use the same callees and literals, so they likely
-    # answer the same question (shape 3). Very common callees carry no signal and are dropped.
+    # answer the same question. Very common callees carry no signal and are dropped.
     feats = defaultdict(set)
     for uid, cs in callees.items():
         feats[uid] |= {"call:" + x for x in cs}
@@ -385,7 +385,7 @@ def scan(root, c):
                           hash=h(json.dumps(sorted((f, files[f].splitlines()[l - 1].strip()) for f, l in where) + sorted(d), ensure_ascii=False)),
                           meta={"text": v, "where": where[:30], "n": len(where), "defs": d[:5]})
 
-    # clones (shape 1: the same code written in several functions)
+    # clones: the same code written in several functions
     W = 5
     win = defaultdict(list)
     for f, src in files.items():
@@ -556,7 +556,7 @@ def cmd_next(a):
     pid = f"P{int(now*1000)%10**9:09d}{os.urandom(2).hex()}" + (f"-p{a.pass_}" if a.pass_ > 1 else "")
     lensmap = {l["id"]: l for l in LENSES}
     out = [f"# Packet {pid}", "", f"Project root: `{a.root}`", "",
-           "Fill EVERY cell below. Read the project's own rules first (PROJECT_GUIDE.md / AGENTS.md / DESIGN.md) if you have not.",
+           "Fill EVERY cell below. Read the project's own rules first (README, AGENTS.md / CLAUDE.md, design docs) if you have not.",
            "You may open any file to check callers, siblings and docs. Do not edit project files.", ""]
     skeleton = []
     used = set()
