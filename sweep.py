@@ -23,7 +23,28 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LENSES = json.load(open(os.path.join(HERE, "lenses.json")))
 LEASE_SECONDS = 2 * 3600
 PACKET_LINES = 600  # ponytail: fixed budget per single-lens packet; tune if agents run out of context
-PER_PACKET = {"lit": 10, "clone": 5, "same": 4, "sib": 4, "text": 1, "mech": 1, "hard": 8}
+PER_PACKET = {"lit": 10, "clone": 5, "same": 4, "sib": 4, "text": 1, "mech": 1, "hard": 8, "flow": 3}
+
+# Untrusted input entering a function, and operations where such input does harm. Regexes over the function's
+# source; JS and Python spellings. A flow unit pairs a source function with a sink function the call graph links.
+FLOW_SOURCES = {
+    "message": r"onMessage|onConnect|addEventListener\(\s*['\"]message|onmessage\s*=",
+    "network": r"\bfetch\(|XMLHttpRequest|\.json\(\)|axios\.|requests\.(get|post)|urlopen",
+    # Reading text off a page or the URL; finding an element (querySelector) or the code's own form fields is not input.
+    "page": r"document\.cookie|\.innerText\b|\.textContent(?!\s*=)|location\.(href|search|hash)(?!\s*=)|URLSearchParams",
+    "user": r"\bprompt\(|\binput\(|sys\.argv|process\.argv|req\.(body|query|params)|request\.(args|form|json)",
+}
+FLOW_SINKS = {
+    "html": r"\.innerHTML\s*[+]?=|outerHTML\s*=|insertAdjacentHTML|document\.write\(",
+    "code": r"\beval\(|new Function\(|executeScript|setTimeout\(\s*['\"`]",
+    "navigation": r"tabs\.(create|update)\(|window\.open\(|location\.(href|assign|replace)\s*[=(]",
+    "request": r"\bfetch\(|XMLHttpRequest|\.request\(",
+    "permission": r"permissions\.request|declarativeNetRequest",
+    "storage-write": r"storage\.(local|sync|session)\.set|localStorage\.setItem",
+    "exec": r"child_process|\bexec\(|\bspawn\(|subprocess\.|os\.system|\.execute\(",
+    "file": r"downloads\.download|writeFile|\bopen\([^)]*['\"]w",
+}
+FLOW_DEPTH, FLOW_PER_SOURCE = 3, 6
 
 # ---------- storage ----------
 
@@ -203,10 +224,14 @@ def scan(root, c):
     # call edges -> callers / callees (production callers only)
     nodes = {n["id"]: n for n in g["nodes"]}
     callers, callees = defaultdict(list), defaultdict(list)
+    caller_ids, callee_ids = defaultdict(set), defaultdict(set)  # unit ids: impact of a change, and flow paths
     for e in g["links"]:
         if e.get("relation") not in ("calls", "indirect_call"):
             continue
         s, t = e["source"], e["target"]
+        if s in node_unit and t in node_unit and node_unit[s] != node_unit[t]:
+            caller_ids[node_unit[t]].add(node_unit[s])
+            callee_ids[node_unit[s]].add(node_unit[t])
         if t in node_unit and in_corpus(e.get("source_file")):
             callers[node_unit[t]].append(f'{e.get("source_file")}:{e.get("source_location","")[1:]} ({nodes.get(s,{}).get("label","?")})')
         if s in node_unit and t in nodes:
@@ -214,7 +239,7 @@ def scan(root, c):
             callees[node_unit[s]].append(f'{tn.get("label")} @ {tn.get("source_file")}:{tn.get("source_location","")[1:]}')
     for uid, u in units.items():
         u["meta"].update(callers=sorted(set(callers[uid]))[:25], callees=sorted(set(callees[uid]))[:25],
-                         n_callers=len(set(callers[uid])))
+                         n_callers=len(set(callers[uid])), caller_ids=sorted(caller_ids[uid]))
 
     by_file = defaultdict(list)
     for u in units.values():
@@ -385,6 +410,41 @@ def scan(root, c):
                           hash=h(json.dumps(sorted((f, files[f].splitlines()[l - 1].strip()) for f, l in where) + sorted(d), ensure_ascii=False)),
                           meta={"text": v, "where": where[:30], "n": len(where), "defs": d[:5]})
 
+    # flows: a function that takes untrusted input, and a function that does something dangerous with data, linked
+    # through the call graph (down its callees, or up to callers that receive its return value). One cell per pair
+    # asks whether the input reaches the operation unchecked. Same-line source and sink (fetch as both) is skipped.
+    def hits(u, table):
+        out = {}
+        for i, line in enumerate(files[u["file"]].splitlines()[u["line_start"] - 1:u["line_end"]], u["line_start"]):
+            for k, rx in table.items():
+                if k not in out and re.search(rx, line):
+                    out[k] = i
+        return out
+    fns = {k: u for k, u in units.items() if u["kind"] == "fn"}
+    srcs = {k: hits(u, FLOW_SOURCES) for k, u in fns.items()}
+    sinks = {k: hits(u, FLOW_SINKS) for k, u in fns.items()}
+    srcs = {k: v for k, v in srcs.items() if v}
+    sinks = {k: v for k, v in sinks.items() if v}
+    for a, sa in sorted(srcs.items()):
+        found = []
+        if a in sinks and not set(sinks[a].values()) <= set(sa.values()):
+            found.append([a])
+        for step in (callee_ids, caller_ids):  # input passed down as an argument, or returned up to a caller; never both
+            seen_, frontier = {a}, [[a]]
+            for _ in range(FLOW_DEPTH):
+                frontier = [p + [n] for p in frontier for n in sorted(step[p[-1]]) if n in fns and n not in seen_ and not seen_.add(n)]
+                found += [p for p in frontier if p[-1] in sinks]
+        for path in sorted(found, key=lambda p: (len(p), p))[:FLOW_PER_SOURCE]:
+            b = path[-1]
+            uid = "flow:" + h(a + ">" + b)
+            members = [fns[x] for x in path]
+            units[uid] = dict(id=uid, kind="flow", name=f'{fns[a]["name"]} → {fns[b]["name"]}', file=fns[a]["file"],
+                              line_start=fns[a]["line_start"], line_end=fns[a]["line_end"], hash=h("|".join(m["hash"] for m in members)),
+                              meta={"source": {"kinds": sorted(sa), "at": f'{fns[a]["file"]}:{min(sa.values())}'},
+                                    "sink": {"kinds": sorted(sinks[b]), "at": f'{fns[b]["file"]}:{min(sinks[b].values())}'},
+                                    "path": [f'{m["name"]} @ {m["file"]}:{m["line_start"]}' for m in members],
+                                    "where": [(m["file"], m["line_start"], m["line_end"]) for m in members]})
+
     # clones: the same code written in several functions
     W = 5
     win = defaultdict(list)
@@ -429,9 +489,12 @@ def sync(c, units):
     now = time.time()
     seen = set()
     reopened = added = 0
+    changed = []
     for u in units.values():
         seen.add(u["id"])
         old = c.execute("select hash from unit where id=?", (u["id"],)).fetchone()
+        if old and old["hash"] != u["hash"] and u["kind"] == "fn":
+            changed.append(u["id"])
         c.execute("insert or replace into unit values(?,?,?,?,?,?,?,?,1)",
                   (u["id"], u["kind"], u["name"], u["file"], u["line_start"], u["line_end"], u["hash"], json.dumps(u["meta"], ensure_ascii=False)))
         src = None
@@ -448,6 +511,14 @@ def sync(c, units):
                 c.execute("update cell set status=?, hash=?, evidence=null, packet=null, at=? where unit_id=? and lens=? and pass=1",
                           (status, u["hash"], now, u["id"], lens["id"]))
                 reopened += ok and row["status"] != "open"
+    # A changed function can break what its callers assumed (return shape, errors, timing): their filled cells
+    # reopen too, one level up. Their own hash is unchanged, so record() still accepts the answers.
+    via = 0
+    for uid in changed:
+        for caller in units[uid]["meta"].get("caller_ids", []):
+            via += c.execute("update cell set status='open', evidence=null, packet=null, at=? where unit_id=? and pass=1 and status in ('clean','finding')",
+                             (now, caller)).rowcount
+    reopened += via
     gone = [r["id"] for r in c.execute("select id from unit where alive=1") if r["id"] not in seen]
     for uid in gone:
         c.execute("update unit set alive=0 where id=?", (uid,))
@@ -575,6 +646,12 @@ def cmd_next(a):
         elif kind == "clone":
             for f, s, e in u["meta"]["where"]:
                 out += [f"- {f}:{s}-{e}", "```", unit_source(a.root, dict(file=f, line_start=s, line_end=e), pad=2), "```"]
+        elif kind == "flow":
+            m = u["meta"]
+            out.append(f'Source ({", ".join(m["source"]["kinds"])}) at {m["source"]["at"]}; sink ({", ".join(m["sink"]["kinds"])}) at {m["sink"]["at"]}')
+            out.append("Call path: " + " → ".join(m["path"]))
+            for f, s_, e in m["where"]:
+                out += [f"- {f}:{s_}-{e}", "```", unit_source(a.root, dict(file=f, line_start=s_, line_end=min(e, s_ + 150))), "```"]
         elif kind in ("same", "sib"):
             if kind == "sib":
                 out.append("Shared callees/literals: " + "; ".join(u["meta"]["shared"]))

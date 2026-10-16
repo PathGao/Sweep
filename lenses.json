@@ -105,6 +105,13 @@
   "ask": "This value (a number is shown as #N) is written inline at the sites listed, and may also be defined as a named constant or table entry (listed under Defined as). For each site decide what fact it encodes: a limit, a timeout, a storage key or prefix, a message/setting name, a user-visible sentence or button name, or a coincidence (an unrelated meaning that happens to share the value, e.g. 12 as a font size vs 12 as a tag limit). Finding (pattern hardcoded-value) when the site encodes the same fact as the constant and does not use it, or when the same fact is written inline at 2+ sites with no single source. Name the constant or table it should come from, or say none exists yet and which module owns the fact (follow the project's own rule for central tables, if its docs have one). Group sites of the same fact into one finding listing every location. If the project already has a lint/selftest that enforces this class, say whether it catches these sites. Coincidences are clean with the reason."
  },
  {
+  "id": "flow-trace",
+  "kind": "flow",
+  "applies": "always",
+  "title": "Untrusted input reaching a dangerous operation",
+  "ask": "The first function takes input from outside the code's control (a message from another context, a network response, the page's DOM or URL, user input); the last one does something where bad input does harm (writes HTML, runs code, navigates, sends a request, asks for permissions, writes storage or files, runs a command). Follow the data along the call path shown (and any other path you find). Does input from the source actually reach the sink? If so, where is it checked (sender, shape, type, allowed values, escaping, length)? Finding (pattern unchecked-flow) when a concrete attacker-controlled or malformed input reaches the sink unchecked: give the input and the effect. Clean when the data never reaches the sink, or when the check exists: name the line. Trust boundaries the project documents as safe (e.g. data from its own pages) count as checked only if the code enforces them."
+ },
+ {
   "id": "mech-members",
   "kind": "mech",
   "applies": "always",
