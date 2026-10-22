@@ -554,14 +554,25 @@ def cmd_init(a):
     c.execute("insert or replace into config values('include',?)", (json.dumps(a.include or ["**"]),))
     c.execute("insert or replace into config values('exclude',?)", (json.dumps(a.exclude or []),))
     c.commit()
-    ex = os.path.join(a.root, ".git", "info", "exclude")
-    if os.path.isdir(os.path.dirname(ex)):
-        cur = open(ex).read() if os.path.exists(ex) else ""
-        with open(ex, "a") as fh:
-            for p in (".sweep/", "graphify-out/"):
-                if p not in cur.split():
-                    fh.write(f"\n{p}\n")
+    git_exclude(a.root)
     cmd_scan(a)
+
+def git_exclude(root):
+    # rev-parse, not root/.git: in a worktree .git is a file and the exclude lives in the common dir
+    try:
+        r = subprocess.run(["git", "-C", root, "rev-parse", "--git-path", "info/exclude"],
+                           capture_output=True, text=True)
+    except FileNotFoundError:
+        return
+    if r.returncode:
+        return
+    ex = os.path.join(root, r.stdout.strip())
+    os.makedirs(os.path.dirname(ex), exist_ok=True)
+    cur = open(ex).read() if os.path.exists(ex) else ""
+    with open(ex, "a") as fh:
+        for p in (".sweep/", "graphify-out/"):
+            if p not in cur.split():
+                fh.write(f"\n{p}\n")
 
 def cmd_scan(a):
     c = db(a.root)
